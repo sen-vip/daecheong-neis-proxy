@@ -1,55 +1,70 @@
 import crypto from 'node:crypto';
 
-export function setCors(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Proxy-Token');
-  res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=86400');
-
-  if (req.method === 'OPTIONS') {
-    res.status(204).end();
-    return true;
-  }
-  return false;
+export function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Proxy-Token',
+    'Cache-Control': 's-maxage=21600, stale-while-revalidate=86400',
+  };
 }
 
-export function requireNeisKey(res) {
-  const key = String(process.env.NEIS_API_KEY || '').trim();
-  if (!key) {
-    res.status(500).json({ error: 'NEIS_API_KEY 환경변수가 설정되지 않았습니다.' });
-    return '';
-  }
-  return key;
+export function json(data, status = 200, extraHeaders = {}) {
+  return Response.json(data, {
+    status,
+    headers: {
+      ...corsHeaders(),
+      ...extraHeaders,
+    },
+  });
 }
 
-export function requireProxyToken(req, res) {
+export function optionsResponse() {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders(),
+  });
+}
+
+export function getNeisKey() {
+  return String(process.env.NEIS_API_KEY || '').trim();
+}
+
+export function validateProxyToken(request) {
   const configured = String(process.env.PROXY_TOKEN || '').trim();
   if (!configured) {
-    res.status(500).json({ error: 'PROXY_TOKEN 환경변수가 설정되지 않았습니다.' });
-    return false;
+    return {
+      ok: false,
+      status: 500,
+      message: 'PROXY_TOKEN 환경변수가 설정되지 않았습니다.',
+    };
   }
 
+  const url = new URL(request.url);
   const received = String(
-    req.headers['x-proxy-token'] || req.query.token || ''
+    request.headers.get('x-proxy-token') ||
+    url.searchParams.get('token') ||
+    ''
   ).trim();
 
   const left = Buffer.from(configured);
   const right = Buffer.from(received);
-  const valid = left.length === right.length && crypto.timingSafeEqual(left, right);
 
-  if (!valid) {
-    res.status(401).json({ error: '프록시 인증에 실패했습니다.' });
-    return false;
-  }
-  return true;
+  const valid =
+    left.length === right.length &&
+    crypto.timingSafeEqual(left, right);
+
+  return valid
+    ? { ok: true }
+    : {
+        ok: false,
+        status: 401,
+        message: '프록시 인증에 실패했습니다.',
+      };
 }
 
-export function badRequest(res, message) {
-  return res.status(400).json({ error: message });
-}
-
-export function parseNeisError(json, rootName) {
-  const head = json?.[rootName]?.[0]?.head;
+export function parseNeisError(payload, rootName) {
+  const head = payload?.[rootName]?.[0]?.head;
   const result = Array.isArray(head)
     ? head.find((item) => item.RESULT)?.RESULT
     : null;
@@ -58,14 +73,14 @@ export function parseNeisError(json, rootName) {
     return result.MESSAGE || result.CODE;
   }
 
-  if (json?.RESULT?.CODE && json.RESULT.CODE !== 'INFO-000') {
-    return json.RESULT.MESSAGE || json.RESULT.CODE;
+  if (payload?.RESULT?.CODE && payload.RESULT.CODE !== 'INFO-000') {
+    return payload.RESULT.MESSAGE || payload.RESULT.CODE;
   }
 
   return '';
 }
 
-export async function fetchNeis(path, params, options = {}) {
+export async function fetchNeis(path, params) {
   const url = new URL(`https://open.neis.go.kr/hub/${path}`);
 
   Object.entries(params).forEach(([key, value]) => {
@@ -74,10 +89,9 @@ export async function fetchNeis(path, params, options = {}) {
     }
   });
 
-  const maxAttempts = Math.max(1, Math.min(2, Number(options.maxAttempts) || 2));
   let lastError = null;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
@@ -87,14 +101,16 @@ export async function fetchNeis(path, params, options = {}) {
         signal: controller.signal,
         headers: {
           Accept: 'application/json',
-          'User-Agent': 'daecheong-neis-proxy/1.1'
-        }
+          'User-Agent': 'daecheong-neis-proxy/1.1.1',
+        },
       });
 
       const text = await response.text();
 
       if (!response.ok) {
-        throw new Error(`NEIS HTTP ${response.status}: ${text.slice(0, 180)}`);
+        throw new Error(
+          `NEIS HTTP ${response.status}: ${text.slice(0, 180)}`
+        );
       }
 
       try {
@@ -104,8 +120,9 @@ export async function fetchNeis(path, params, options = {}) {
       }
     } catch (error) {
       lastError = error;
-      if (attempt < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, 350 * attempt));
+
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
       }
     } finally {
       clearTimeout(timeout);
@@ -115,35 +132,31 @@ export async function fetchNeis(path, params, options = {}) {
   throw lastError || new Error('나이스 API 호출에 실패했습니다.');
 }
 
-export function onlyDigits(value) {
+export function digits(value) {
   return String(value || '').replace(/\D/g, '');
-}
-
-export function safeText(value, max = 80) {
-  return String(value || '').trim().slice(0, max);
 }
 
 export function pad2(value) {
   return String(value).padStart(2, '0');
 }
 
-export function toIsoDate(yyyymmdd) {
-  const raw = onlyDigits(yyyymmdd);
+export function isoDate(value) {
+  const raw = digits(value);
   if (raw.length !== 8) return '';
   return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
 }
 
 export function gradeText(row) {
-  const checks = [
+  const grades = [
     ['ONE_GRADE_EVENT_YN', '1학년'],
     ['TW_GRADE_EVENT_YN', '2학년'],
     ['THREE_GRADE_EVENT_YN', '3학년'],
     ['FR_GRADE_EVENT_YN', '4학년'],
     ['FIV_GRADE_EVENT_YN', '5학년'],
-    ['SIX_GRADE_EVENT_YN', '6학년']
+    ['SIX_GRADE_EVENT_YN', '6학년'],
   ];
 
-  return checks
+  return grades
     .filter(([key]) => String(row?.[key] || '').toUpperCase() === 'Y')
     .map(([, label]) => label)
     .join(', ');

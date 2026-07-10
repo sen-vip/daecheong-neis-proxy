@@ -1,31 +1,42 @@
-# 대청중 NEIS Vercel 프록시 v1.1.0
+# 대청중 NEIS Vercel 프록시 v1.1.1
 
-Apps Script 대신 Vercel이 나이스 학사일정을 조회합니다.
+현재 Vercel Functions 형식에 맞춰 `GET` 메서드 export 방식으로 작성한 버전입니다.
 
-## Vercel 환경변수
+## 교체
 
-| 이름 | 값 |
-|---|---|
-| `NEIS_API_KEY` | 나이스 교육정보 개방포털 인증키 |
-| `PROXY_TOKEN` | 직접 정한 긴 임의 문자열 |
+GitHub 저장소에서 기존 파일을 이 버전의 파일로 교체합니다.
 
-`PROXY_TOKEN`은 Apps Script의 `NEIS_PROXY_TOKEN`에도 같은 값으로 입력합니다.
+- `api/_utils.js`
+- `api/health.js`
+- `api/schedules.js`
+- `api/schools.js`
+- `package.json`
+- `index.html` 추가
 
-## 배포
+커밋하면 Vercel이 자동 배포합니다.
 
-1. 이 폴더를 새 GitHub 저장소에 올립니다.
-2. Vercel에서 `Add New → Project`로 가져옵니다.
-3. Framework Preset은 `Other`로 둡니다.
-4. 환경변수 두 개를 등록합니다.
-5. 배포합니다.
-6. 배포 주소 뒤에 `/api/health`를 붙여 확인합니다.
+## 확인
 
-정상이라면 `hasNeisKey`, `hasProxyToken`이 모두 `true`입니다.
-
-## 대관달력 호출 형태
+기본 주소:
 
 ```text
-/api/schedules?officeCode=B10&schoolCode=7091426&year=2026&month=7
+https://프로젝트명.vercel.app/
 ```
 
-실제 API 키는 Vercel 환경변수에만 저장하고 GitHub에는 올리지 않습니다.
+상태 확인:
+
+```text
+https://프로젝트명.vercel.app/api/health
+```
+
+정상 결과:
+
+```json
+{
+  "ok": true,
+  "service": "daecheong-neis-proxy",
+  "version": "1.1.1",
+  "hasNeisKey": true,
+  "hasProxyToken": true
+}
+```
