@@ -1,42 +1,32 @@
-# 대청중 NEIS Vercel 프록시 v1.1.1
+# 대청중 NEIS Vercel 프록시 v1.1.2
 
-현재 Vercel Functions 형식에 맞춰 `GET` 메서드 export 방식으로 작성한 버전입니다.
+## 변경 사항
 
-## 교체
+- `SchoolSchedule` 요청에서 `AY` 제거
+- 기존 학돌 NEIS 백엔드와 동일하게 연간 날짜 범위로 조회
+- 받은 연간 자료에서 요청한 월만 필터링
+- `토요휴업일` 제외
+- 응답에 `requestMode: year-range-no-AY` 표시
 
-GitHub 저장소에서 기존 파일을 이 버전의 파일로 교체합니다.
+## GitHub 교체
 
-- `api/_utils.js`
-- `api/health.js`
-- `api/schedules.js`
-- `api/schools.js`
-- `package.json`
-- `index.html` 추가
-
-커밋하면 Vercel이 자동 배포합니다.
-
-## 확인
-
-기본 주소:
+아래 파일만 교체해도 됩니다.
 
 ```text
-https://프로젝트명.vercel.app/
+api/_utils.js
+api/health.js
+api/schedules.js
+package.json
+README.md
 ```
 
-상태 확인:
+커밋 후 Vercel 배포가 `Ready`가 되면:
 
 ```text
-https://프로젝트명.vercel.app/api/health
+https://daecheong-neis-proxy.vercel.app/api/health
 ```
 
-정상 결과:
+에서 버전이 `1.1.2`인지 확인합니다.
 
-```json
-{
-  "ok": true,
-  "service": "daecheong-neis-proxy",
-  "version": "1.1.1",
-  "hasNeisKey": true,
-  "hasProxyToken": true
-}
-```
+그다음 Apps Script의 `debugProxySchedule()`을 다시 실행합니다.
+Apps Script 코드는 변경할 필요가 없습니다.

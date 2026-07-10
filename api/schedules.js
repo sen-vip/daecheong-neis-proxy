@@ -5,7 +5,6 @@ import {
   isoDate,
   json,
   optionsResponse,
-  pad2,
   parseNeisError,
   validateProxyToken,
 } from './_utils.js';
@@ -51,20 +50,20 @@ export async function GET(request) {
     return json({ error: 'month가 올바르지 않습니다.' }, 400);
   }
 
-  const monthText = pad2(month);
-  const lastDay = new Date(year, month, 0).getDate();
-  const from = `${year}${monthText}01`;
-  const to = `${year}${monthText}${pad2(lastDay)}`;
+  // 기존 학돌 NEIS 백엔드와 동일하게 연간 범위를 조회합니다.
+  // AY는 전달하지 않습니다. 받은 뒤 요청 월만 필터링합니다.
+  const from = `${year}0101`;
+  const to = `${year}1231`;
+  const targetMonth = String(month).padStart(2, '0');
 
   try {
     const payload = await fetchNeis('SchoolSchedule', {
       KEY: neisKey,
       Type: 'json',
       pIndex: 1,
-      pSize: 100,
+      pSize: 1000,
       ATPT_OFCDC_SC_CODE: officeCode,
       SD_SCHUL_CODE: schoolCode,
-      AY: String(year),
       AA_FROM_YMD: from,
       AA_TO_YMD: to,
     });
@@ -82,21 +81,26 @@ export async function GET(request) {
 
     const schedules = rows
       .map((row) => {
+        const date = isoDate(row.AA_YMD);
         const eventName = String(row.EVENT_NM || '').trim();
         const compactName = eventName.replace(/\s+/g, '');
+
+        if (!date || date.slice(5, 7) !== targetMonth) {
+          return null;
+        }
 
         if (!eventName || compactName.includes('토요휴업일')) {
           return null;
         }
 
         return {
-          date: isoDate(row.AA_YMD),
+          date,
           eventName,
           eventContent: String(row.EVENT_CNTNT || '').trim(),
           gradeText: gradeText(row),
         };
       })
-      .filter((item) => item && item.date)
+      .filter(Boolean)
       .sort((a, b) => a.date.localeCompare(b.date));
 
     return json({
@@ -105,6 +109,8 @@ export async function GET(request) {
       schoolCode,
       year,
       month,
+      requestMode: 'year-range-no-AY',
+      sourceCount: rows.length,
       count: schedules.length,
       schedules,
     });
@@ -116,6 +122,7 @@ export async function GET(request) {
         ? '나이스 API 응답 시간이 초과되었습니다.'
         : '나이스 학사일정 조회에 실패했습니다.',
       detail: String(error?.message || '').slice(0, 220),
+      requestMode: 'year-range-no-AY',
     }, 502);
   }
 }

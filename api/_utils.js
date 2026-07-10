@@ -101,7 +101,7 @@ export async function fetchNeis(path, params) {
         signal: controller.signal,
         headers: {
           Accept: 'application/json',
-          'User-Agent': 'daecheong-neis-proxy/1.1.1',
+          'User-Agent': 'daecheong-neis-proxy/1.1.2',
         },
       });
 
