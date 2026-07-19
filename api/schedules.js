@@ -13,6 +13,21 @@ export function OPTIONS() {
   return optionsResponse();
 }
 
+function getAcademicYear(year, month) {
+  // 한국 학교 학년도는 3월에 시작하므로 1~2월은 전년도 학년도에 속합니다.
+  return month <= 2 ? year - 1 : year;
+}
+
+function getMonthRange(year, month) {
+  const monthText = String(month).padStart(2, '0');
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+  return {
+    from: `${year}${monthText}01`,
+    to: `${year}${monthText}${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
 export async function GET(request) {
   const auth = validateProxyToken(request);
   if (!auth.ok) {
@@ -50,13 +65,12 @@ export async function GET(request) {
     return json({ error: 'month가 올바르지 않습니다.' }, 400);
   }
 
-  // 기존 학돌 NEIS 백엔드와 동일하게 연간 범위를 조회합니다.
-  // AY는 전달하지 않습니다. 받은 뒤 요청 월만 필터링합니다.
-  const from = `${year}0101`;
-  const to = `${year}1231`;
-  const targetMonth = String(month).padStart(2, '0');
+  const academicYear = getAcademicYear(year, month);
+  const { from, to } = getMonthRange(year, month);
 
   try {
+    // 연간 전체 조회 대신 요청한 한 달만 조회합니다.
+    // AY를 함께 전달해 NEIS의 연간 범위 조회 HTTP 500 오류를 피합니다.
     const payload = await fetchNeis('SchoolSchedule', {
       KEY: neisKey,
       Type: 'json',
@@ -64,6 +78,7 @@ export async function GET(request) {
       pSize: 1000,
       ATPT_OFCDC_SC_CODE: officeCode,
       SD_SCHUL_CODE: schoolCode,
+      AY: academicYear,
       AA_FROM_YMD: from,
       AA_TO_YMD: to,
     });
@@ -74,10 +89,15 @@ export async function GET(request) {
       neisError &&
       !/자료가 존재하지 않습니다/.test(neisError)
     ) {
-      return json({ error: neisError }, 502);
+      return json({
+        error: neisError,
+        requestMode: 'month-range-with-AY',
+        requestAY: academicYear,
+      }, 502);
     }
 
     const rows = payload?.SchoolSchedule?.[1]?.row || [];
+    const targetMonth = String(month).padStart(2, '0');
 
     const schedules = rows
       .map((row) => {
@@ -85,7 +105,8 @@ export async function GET(request) {
         const eventName = String(row.EVENT_NM || '').trim();
         const compactName = eventName.replace(/\s+/g, '');
 
-        if (!date || date.slice(5, 7) !== targetMonth) {
+        // NEIS가 범위 밖 자료를 섞어 반환하는 경우를 대비해 한 번 더 월을 확인합니다.
+        if (!date || date.slice(0, 4) !== String(year) || date.slice(5, 7) !== targetMonth) {
           return null;
         }
 
@@ -109,7 +130,10 @@ export async function GET(request) {
       schoolCode,
       year,
       month,
-      requestMode: 'year-range-no-AY',
+      requestMode: 'month-range-with-AY',
+      requestAY: academicYear,
+      requestFrom: from,
+      requestTo: to,
       sourceCount: rows.length,
       count: schedules.length,
       schedules,
@@ -122,7 +146,10 @@ export async function GET(request) {
         ? '나이스 API 응답 시간이 초과되었습니다.'
         : '나이스 학사일정 조회에 실패했습니다.',
       detail: String(error?.message || '').slice(0, 220),
-      requestMode: 'year-range-no-AY',
+      requestMode: 'month-range-with-AY',
+      requestAY: academicYear,
+      requestFrom: from,
+      requestTo: to,
     }, 502);
   }
 }
