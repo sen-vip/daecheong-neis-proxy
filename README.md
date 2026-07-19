@@ -1,58 +1,53 @@
-# 대청중 NEIS Vercel 프록시 v1.2.0
+# 대청중 NEIS Vercel 프록시 v1.3.0
 
 ## 이번 수정 내용
 
-기존 v1.1.2는 `SchoolSchedule`을 다음 방식으로 조회했습니다.
+`학사 건너뜀`이 반복되는 두 가지 원인을 함께 보완했습니다.
 
-- 한 해 전체 날짜 범위 조회
-- `AY`(학년도) 미전달
-- 응답 모드: `year-range-no-AY`
+1. **오류 응답 캐시 제거**
+   - 기존에는 4xx/5xx 오류도 최대 6시간 CDN에 저장될 수 있었습니다.
+   - 이제 오류 응답과 상태 확인 응답은 `no-store`로 처리합니다.
+   - 성공 응답만 10분간 짧게 캐시합니다.
 
-이 방식에서 NEIS 서버가 HTTP 500을 반환하고 프록시가 502로 응답하는 문제가 확인되어 다음과 같이 변경했습니다.
+2. **NEIS 조회 방식 자동 대체**
+   - 1차: 학년도 + 요청 월 날짜 범위
+   - 2차: 학년도 전체 조회 후 요청 월 필터링
+   - 3차: 요청 월 날짜 범위만 조회
+   - 한 방식에서 NEIS HTTP 500이 발생해도 다음 방식으로 자동 재시도합니다.
 
-- 요청한 **한 달 범위만 조회**
-- `AY`(학년도)를 반드시 전달
-- 3~12월: `AY = 요청 연도`
-- 1~2월: `AY = 요청 연도 - 1`
-- 응답 모드: `month-range-with-AY`
-- 기존 응답 구조와 `토요휴업일` 제외 기능 유지
+3. **기존 Apps Script 호환 유지**
+   - 기존 요청값 `officeCode`, `schoolCode`, `year`, `month`, `token`을 그대로 사용합니다.
+   - 응답의 `schedules` 구조도 유지합니다.
 
-예시:
+## GitHub 교체
 
-- 2026년 7월 요청 → `AY=2026`, `20260701~20260731`
-- 2026년 2월 요청 → `AY=2025`, `20260201~20260228`
+압축을 푼 뒤 저장소의 기존 파일을 모두 덮어쓰고 커밋합니다.
 
-## GitHub에 올리는 방법
-
-이 ZIP의 압축을 푼 뒤 저장소 파일 전체를 기존 GitHub 저장소에 덮어쓰고 커밋합니다.
-
-Vercel과 GitHub가 연결되어 있으면 커밋 후 자동 배포됩니다.
-
-## 배포 확인
-
-배포가 `Ready`가 되면 아래 주소를 엽니다.
+Vercel 배포가 완료되면 다음 주소를 새로 엽니다.
 
 ```text
-https://daecheong-neis-proxy.vercel.app/api/health
+https://daecheong-neis-proxy.vercel.app/api/health?check=130
 ```
 
-정상 응답 예시:
+정상 예시:
 
 ```json
 {
   "ok": true,
-  "service": "daecheong-neis-proxy",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "hasNeisKey": true,
-  "hasProxyToken": true
+  "hasProxyToken": true,
+  "cachePolicy": "errors-no-store; success-10m"
 }
 ```
 
-그다음 Apps Script의 학사일정 연동 또는 `debugProxySchedule()`을 다시 실행합니다.
-Apps Script 코드는 변경할 필요가 없습니다.
+`version`이 1.3.0이 아니면 운영 도메인이 새 배포를 바라보지 않는 상태입니다.
 
-정상이라면 프록시 응답 코드가 `200`이고 응답에 아래 값이 표시됩니다.
+그다음 Apps Script에서 `debugProxySchedule()`을 실행하고 시트의 `프록시점검` 탭을 확인합니다.
+정상 응답은 코드 200이며 `requestMode`는 아래 셋 중 하나입니다.
 
 ```text
-requestMode: month-range-with-AY
+month-range-with-AY
+academic-year-only
+month-range-no-AY
 ```

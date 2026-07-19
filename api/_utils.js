@@ -5,15 +5,22 @@ export function corsHeaders() {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Proxy-Token',
-    'Cache-Control': 's-maxage=21600, stale-while-revalidate=86400',
   };
 }
 
 export function json(data, status = 200, extraHeaders = {}) {
+  // 오류 응답을 CDN에 저장하면 배포 후에도 예전 4xx/5xx가 반복될 수 있습니다.
+  // 성공 응답만 짧게 캐시하고 오류/상태 확인 응답은 저장하지 않습니다.
+  const defaultCache = status >= 400
+    ? 'no-store, max-age=0'
+    : 's-maxage=600, stale-while-revalidate=1800';
+
   return Response.json(data, {
     status,
     headers: {
       ...corsHeaders(),
+      'Cache-Control': defaultCache,
+      'Vercel-CDN-Cache-Control': defaultCache,
       ...extraHeaders,
     },
   });
@@ -22,7 +29,11 @@ export function json(data, status = 200, extraHeaders = {}) {
 export function optionsResponse() {
   return new Response(null, {
     status: 204,
-    headers: corsHeaders(),
+    headers: {
+      ...corsHeaders(),
+      'Cache-Control': 'no-store, max-age=0',
+      'Vercel-CDN-Cache-Control': 'no-store, max-age=0',
+    },
   });
 }
 
@@ -101,7 +112,7 @@ export async function fetchNeis(path, params) {
         signal: controller.signal,
         headers: {
           Accept: 'application/json',
-          'User-Agent': 'daecheong-neis-proxy/1.2.0',
+          'User-Agent': 'daecheong-neis-proxy/1.3.0',
         },
       });
 
@@ -122,7 +133,7 @@ export async function fetchNeis(path, params) {
       lastError = error;
 
       if (attempt < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+        await new Promise((resolve) => setTimeout(resolve, 350));
       }
     } finally {
       clearTimeout(timeout);
